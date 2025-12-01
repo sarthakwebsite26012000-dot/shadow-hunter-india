@@ -1,14 +1,21 @@
 // Shadow Hunter India - Game Implementation
 
-const canvas = document.getElementById('gameCanvas');
+const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
+
+// HUD elements
+const hudLevel = document.getElementById('hud-level');
+const hudGems = document.getElementById('hud-gems');
+const hudEnemies = document.getElementById('hud-enemies');
+const messageDiv = document.getElementById('message');
 
 // Game State
 let gameState = {
   level: 1,
   score: 0,
-  gems: 0,
-  lives: 3,
+  gemsCollected: 0,
+  totalGems: 0,
+  enemiesLeft: 0,
   gameOver: false,
   levelComplete: false
 };
@@ -38,11 +45,29 @@ let hidingSpots = [];
 // Keys pressed
 const keys = {};
 
+// Update HUD
+function updateHUD() {
+  hudLevel.textContent = gameState.level;
+  hudGems.textContent = `${gameState.gemsCollected}/${gameState.totalGems}`;
+  hudEnemies.textContent = gameState.enemiesLeft;
+}
+
+// Show message
+function showMessage(text) {
+  messageDiv.textContent = text;
+  messageDiv.style.display = 'block';
+}
+
+function hideMessage() {
+  messageDiv.style.display = 'none';
+}
+
 // Initialize level
 function initLevel(level) {
   enemies = [];
   gems = [];
   hidingSpots = [];
+  hideMessage();
   
   // Place player at start
   player.x = 50;
@@ -89,11 +114,16 @@ function initLevel(level) {
       dx: (Math.random() - 0.5) * 2,
       dy: (Math.random() - 0.5) * 2,
       detectionRadius: 100 + level * 10,
-      patrolAngle: Math.random() * Math.PI * 2
+      patrolAngle: Math.random() * Math.PI * 2,
+      alive: true
     });
   }
   
   gameState.levelComplete = false;
+  gameState.gemsCollected = 0;
+  gameState.totalGems = numGems;
+  gameState.enemiesLeft = numEnemies;
+  updateHUD();
 }
 
 // Check collision between two rectangles
@@ -137,20 +167,24 @@ function updatePlayer() {
   for (let gem of gems) {
     if (!gem.collected && checkCollision(player, gem)) {
       gem.collected = true;
-      gameState.gems++;
+      gameState.gemsCollected++;
       gameState.score += 100;
+      updateHUD();
     }
   }
   
   // Check if all gems collected
   if (gems.every(gem => gem.collected)) {
     gameState.levelComplete = true;
+    showMessage(`Level ${gameState.level} Complete! Press SPACE for next level`);
   }
 }
 
 // Update enemy AI
 function updateEnemies() {
   for (let enemy of enemies) {
+    if (!enemy.alive) continue;
+    
     // Calculate distance to player
     const dx = player.x - enemy.x;
     const dy = player.y - enemy.y;
@@ -187,14 +221,8 @@ function updateEnemies() {
     
     // Check collision with player (only if player is not hidden)
     if (!player.isHidden && checkCollision(player, enemy)) {
-      gameState.lives--;
-      if (gameState.lives <= 0) {
-        gameState.gameOver = true;
-      } else {
-        // Reset player position
-        player.x = 50;
-        player.y = 50;
-      }
+      gameState.gameOver = true;
+      showMessage('Game Over! Press R to restart');
     }
   }
 }
@@ -210,6 +238,7 @@ function draw() {
     ctx.fillStyle = spot.color;
     ctx.fillRect(spot.x, spot.y, spot.width, spot.height);
     ctx.strokeStyle = '#654321';
+    ctx.lineWidth = 2;
     ctx.strokeRect(spot.x, spot.y, spot.width, spot.height);
   }
   
@@ -221,6 +250,7 @@ function draw() {
       ctx.arc(gem.x + gem.width/2, gem.y + gem.height/2, gem.width/2, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = '#FFA500';
+      ctx.lineWidth = 2;
       ctx.stroke();
     }
   }
@@ -233,61 +263,39 @@ function draw() {
   }
   ctx.fillRect(player.x, player.y, player.width, player.height);
   ctx.strokeStyle = '#00aa00';
+  ctx.lineWidth = 2;
   ctx.strokeRect(player.x, player.y, player.width, player.height);
+  
+  // Draw "HIDDEN" text if player is hidden
+  if (player.isHidden) {
+    ctx.fillStyle = '#00ff00';
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('HIDDEN', player.x + player.width/2, player.y - 10);
+  }
   
   // Draw enemies
   for (let enemy of enemies) {
+    if (!enemy.alive) continue;
+    
     ctx.fillStyle = enemy.color;
     ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
     ctx.strokeStyle = '#aa0000';
+    ctx.lineWidth = 2;
     ctx.strokeRect(enemy.x, enemy.y, enemy.width, enemy.height);
     
-    // Draw detection radius (if player not hidden)
-    if (!player.isHidden) {
-      ctx.strokeStyle = 'rgba(255, 0, 0, 0.2)';
+    // Draw detection radius (if player not hidden and close enough)
+    const dx = player.x - enemy.x;
+    const dy = player.y - enemy.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (!player.isHidden && distance < enemy.detectionRadius) {
+      ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
+      ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.arc(enemy.x + enemy.width/2, enemy.y + enemy.height/2, enemy.detectionRadius, 0, Math.PI * 2);
       ctx.stroke();
     }
-  }
-  
-  // Draw HUD
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '20px Arial';
-  ctx.fillText(`Level: ${gameState.level}`, 10, 30);
-  ctx.fillText(`Score: ${gameState.score}`, 10, 60);
-  ctx.fillText(`Gems: ${gameState.gems}/${gems.length}`, 10, 90);
-  ctx.fillText(`Lives: ${gameState.lives}`, 10, 120);
-  
-  if (player.isHidden) {
-    ctx.fillStyle = '#00ff00';
-    ctx.fillText('HIDDEN', canvas.width - 100, 30);
-  }
-  
-  // Draw game over or level complete messages
-  if (gameState.gameOver) {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#ff0000';
-    ctx.font = '48px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('GAME OVER', canvas.width/2, canvas.height/2 - 30);
-    ctx.font = '24px Arial';
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(`Final Score: ${gameState.score}`, canvas.width/2, canvas.height/2 + 20);
-    ctx.fillText('Press R to Restart', canvas.width/2, canvas.height/2 + 60);
-    ctx.textAlign = 'left';
-  } else if (gameState.levelComplete) {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#00ff00';
-    ctx.font = '48px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('LEVEL COMPLETE!', canvas.width/2, canvas.height/2 - 30);
-    ctx.font = '24px Arial';
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText('Press SPACE for Next Level', canvas.width/2, canvas.height/2 + 20);
-    ctx.textAlign = 'left';
   }
 }
 
@@ -310,8 +318,6 @@ document.addEventListener('keydown', (e) => {
     if (gameState.gameOver) {
       gameState.level = 1;
       gameState.score = 0;
-      gameState.gems = 0;
-      gameState.lives = 3;
       gameState.gameOver = false;
       initLevel(1);
     }
@@ -331,6 +337,8 @@ document.addEventListener('keyup', (e) => {
   keys[e.key] = false;
 });
 
-// Start game
-initLevel(1);
-gameLoop();
+// Start game when page loads
+window.addEventListener('load', () => {
+  initLevel(1);
+  gameLoop();
+});
